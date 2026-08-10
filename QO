@@ -1,0 +1,225 @@
+local args = {
+	{
+		buffer.fromstring("\r\f\015\000"),
+		0,
+		vector.zero,
+		"Idle"
+	}
+}
+
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ป้องกันเมนูซ้ำซ้อน
+if playerGui:FindFirstChild("EvadeMenu_v1_3_1") then
+	playerGui.EvadeMenu_v1_3_1:Destroy()
+end
+
+-- 1. สร้างหน้าจอเมนู UI (ลากขยับได้)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "EvadeMenu_v1_3_1"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 220)
+frame.Position = UDim2.new(0.5, -110, 0.3, 0)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = frame
+
+-- ทำให้เมนูลากขยับได้ลื่นๆ
+local dragging, dragInput, dragStart, startPos
+frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+frame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 35)
+title.BackgroundTransparency = 1
+title.Text = "Evade Menu v1.3.1"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 14
+title.Font = Enum.Font.GothamBold
+title.Parent = frame
+
+local function createButton(name, posY)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.85, 0, 0, 35)
+	btn.Position = UDim2.new(0.075, 0, 0, posY)
+	btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	btn.Text = name .. ": OFF"
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.TextSize = 13
+	btn.Font = Enum.Font.GothamBold
+	btn.Parent = frame
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = btn
+	return btn
+end
+
+local btnSpeed = createButton("Speed 40", 45)
+local btnEsp = createButton("Nextbot ESP", 90)
+local btnInfJump = createButton("Infinite Jump", 135)
+
+local isSpeedEnabled = false
+local isEspEnabled = false
+local isInfJumpEnabled = false
+
+-- 2. ระบบดันสปีดแบบเจาะเกราะ (ใช้การปรับค่าความเร็วสูงสุดและเพิ่มแรงส่งผ่านเวกเตอร์เมื่อกดเดิน)
+task.spawn(function()
+	local runService = game:GetService("RunService")
+	while true do
+		if isSpeedEnabled then
+			local character = player.Character
+			if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") then
+				local humanoid = character.Humanoid
+				-- ดัน WalkSpeed ไปที่ 65 เพื่อให้ระบบเกมยอมปล่อยสปีดให้วิ่งจริงอยู่ที่ประมาณ 40
+				humanoid.WalkSpeed = 65
+				
+				-- บังคับเพิ่มความเร็วผ่านทิศทางการเคลื่อนที่
+				if humanoid.MoveDirection.Magnitude > 0 then
+					local hrp = character.HumanoidRootPart
+					hrp.AssemblyLinearVelocity = Vector3.new(
+						humanoid.MoveDirection.X * 40,
+						hrp.AssemblyLinearVelocity.Y,
+						humanoid.MoveDirection.Z * 40
+					)
+				end
+			end
+		end
+		runService.RenderStepped:Wait()
+	end
+end)
+
+btnSpeed.MouseButton1Click:Connect(function()
+	isSpeedEnabled = not isSpeedEnabled
+	if isSpeedEnabled then
+		btnSpeed.Text = "Speed 40: ON"
+		btnSpeed.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+	else
+		btnSpeed.Text = "Speed 40: OFF"
+		btnSpeed.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+		if player.Character and player.Character:FindFirstChild("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = 16
+		end
+	end
+end)
+
+-- 3. ระบบมองทะลุเฉพาะ Nextbot (กรองตัวที่วิ่งไล่ล่าจริงๆ)
+local highlights = {}
+local function updateNextbotESP()
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("Model") and not game.Players:GetPlayerFromCharacter(obj) then
+			-- ตรวจสอบว่าเป็น Nextbot มอนสเตอร์ หรือตัวไล่ล่า
+			if obj:FindFirstChild("Humanoid") and obj ~= player.Character then
+				-- เช็คเงื่อนไขเพิ่มเติมเพื่อไม่ให้จับสิ่งของประกอบฉาก
+				if obj.Name ~= "Terrain" and obj:FindFirstChild("HumanoidRootPart") then
+					if isEspEnabled then
+						if not highlights[obj] then
+							local hl = Instance.new("Highlight")
+							hl.Adornee = obj
+							hl.FillColor = Color3.fromRGB(255, 0, 0) -- สีแดงเด่นชัด
+							hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+							hl.Parent = obj
+							highlights[obj] = hl
+						end
+					else
+						if highlights[obj] then
+							highlights[obj]:Destroy()
+							highlights[obj] = nil
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while true do
+		if isEspEnabled then
+			updateNextbotESP()
+		end
+		task.wait(0.5)
+	end
+end)
+
+btnEsp.MouseButton1Click:Connect(function()
+	isEspEnabled = not isEspEnabled
+	if isEspEnabled then
+		btnEsp.Text = "Nextbot ESP: ON"
+		btnEsp.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+	else
+		btnEsp.Text = "Nextbot ESP: OFF"
+		btnEsp.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+		for _, hl in pairs(highlights) do
+			if hl then hl:Destroy() end
+		end
+		highlights = {}
+	end
+end)
+
+-- 4. ระบบกระโดดสูงไม่จำกัด (Infinite Jump)
+game:GetService("UserInputService").JumpRequest:Connect(function()
+	if isInfJumpEnabled then
+		local character = player.Character
+		if character and character:FindFirstChild("HumanoidRootPart") then
+			character.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(
+				character.HumanoidRootPart.AssemblyLinearVelocity.X,
+				50,
+				character.HumanoidRootPart.AssemblyLinearVelocity.Z
+			)
+		end
+	end
+end)
+
+btnInfJump.MouseButton1Click:Connect(function()
+	isInfJumpEnabled = not isInfJumpEnabled
+	if isInfJumpEnabled then
+		btnInfJump.Text = "Infinite Jump: ON"
+		btnInfJump.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+	else
+		btnInfJump.Text = "Infinite Jump: OFF"
+		btnInfJump.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	end
+end)
+
+-- ปุ่มลัดเปิด/ปิดเมนู (RightShift)
+game:GetService("UserInputService").InputBegan:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		screenGui.Enabled = not screenGui.Enabled
+	end
+end)
+
+--- 5. รัน Event เดิมของคุณ
+game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("UpdateCharacterDataRegistry"):FireServer(unpack(args))
